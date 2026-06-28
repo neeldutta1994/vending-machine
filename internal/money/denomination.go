@@ -2,8 +2,7 @@ package money
 
 import "fmt"
 
-// Denomination is a coin the machine accepts. The machine deals in the eight
-// UK denominations from 1p up to £2.
+// Denomination is a coin the machine accepts: the eight UK coins from 1p to £2.
 type Denomination Money
 
 const (
@@ -17,8 +16,7 @@ const (
 	TwoPounds   Denomination = 200
 )
 
-// denominations lists every accepted coin, largest first. The change-making
-// algorithm walks this slice in order, so keep it sorted high to low.
+// denominations is largest first; the change algorithm relies on that order.
 var denominations = []Denomination{
 	TwoPounds, OnePound, FiftyPence, TwentyPence, TenPence, FivePence, TwoPence, OnePenny,
 }
@@ -30,13 +28,11 @@ func Denominations() []Denomination {
 	return out
 }
 
-// Value is the coin's worth as a Money amount.
-func (d Denomination) Value() Money { return Money(d) }
-
+func (d Denomination) Value() Money   { return Money(d) }
 func (d Denomination) String() string { return Money(d).String() }
 
 // ParseDenomination turns a pence value into a Denomination, rejecting anything
-// that is not one of the coins the machine takes.
+// that is not a coin the machine takes.
 func ParseDenomination(pence int) (Denomination, error) {
 	for _, d := range denominations {
 		if int(d) == pence {

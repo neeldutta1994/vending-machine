@@ -1,9 +1,6 @@
-// Command vending-machine is the command-line vending machine.
-//
-// It loads its product inventory from a file (input.txt by default, or the
-// first argument), asks how much money the machine already holds, and then
-// reads commands from standard input. Type "help" once it is running for the
-// list of commands.
+// Command vending-machine is the command-line vending machine. It loads its
+// inventory from a file (input.txt by default, or the first argument) and reads
+// commands from standard input; type "help" once running.
 package main
 
 import (

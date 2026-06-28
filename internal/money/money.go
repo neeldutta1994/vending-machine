@@ -2,23 +2,17 @@ package money
 
 import "fmt"
 
-// Money is an amount of money held as a whole number of pence.
-//
-// Everything in the machine is counted in pence rather than pounds-as-floats.
-// Coins and prices are exact, and adding them up or taking change away never
-// drifts the way binary floating point does (0.1 + 0.2 != 0.3).
+// Money is an amount held as a whole number of pence, so coins and prices stay
+// exact and never drift the way floating-point pounds would.
 type Money int
 
-// String formats an amount the way a price label would read: "5p", "50p",
-// "£1" or "£1.50".
+// String formats an amount the way a price label reads: "5p", "£1", "£1.50".
 func (m Money) String() string {
 	if m < 100 {
 		return fmt.Sprintf("%dp", int(m))
 	}
-	pounds := m / 100
-	pence := m % 100
-	if pence == 0 {
-		return fmt.Sprintf("£%d", int(pounds))
+	if m%100 == 0 {
+		return fmt.Sprintf("£%d", int(m/100))
 	}
-	return fmt.Sprintf("£%d.%02d", int(pounds), int(pence))
+	return fmt.Sprintf("£%d.%02d", int(m/100), int(m%100))
 }

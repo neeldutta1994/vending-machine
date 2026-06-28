@@ -1,7 +1,5 @@
-// Package cli is the command-line front end for the vending machine. It reads
-// commands from an input stream and drives the vending.Machine aggregate,
-// keeping all the user interaction (prompts, parsing, printing) out of the
-// domain.
+// Package cli is the command-line front end. It reads commands and drives the
+// vending.Machine, keeping all user interaction out of the domain.
 package cli
 
 import (
@@ -9,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -16,11 +15,9 @@ import (
 	"github.com/vending-machine/internal/vending"
 )
 
-// Run starts the interactive session. It first asks how much money the machine
-// already holds (the change float), then loops reading commands until "quit" or
-// end of input.
-//
-// Input and output are passed in so the session can be scripted in tests.
+// Run asks how much money the machine already holds, then reads commands until
+// "quit" or end of input. Input and output are passed in so it can be scripted
+// in tests.
 func Run(in io.Reader, out io.Writer, products []vending.Stock) error {
 	input := bufio.NewScanner(in)
 	input.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -40,14 +37,13 @@ func Run(in io.Reader, out io.Writer, products []vending.Stock) error {
 		fmt.Fprint(out, "\n> ")
 		if !input.Scan() {
 			fmt.Fprintln(out)
-			return nil // end of input
+			return nil
 		}
 		command, arg := splitCommand(strings.TrimSpace(input.Text()))
-		if command == "" {
-			continue
-		}
 
 		switch strings.ToLower(command) {
+		case "":
+			continue
 		case "help", "?":
 			printHelp(out)
 		case "list":
@@ -59,9 +55,14 @@ func Run(in io.Reader, out io.Writer, products []vending.Stock) error {
 		case "balance":
 			fmt.Fprintf(out, "Inserted so far: %s\n", machine.Balance())
 		case "cancel":
-			doCancel(out, machine)
+			if refund := machine.Cancel(); refund.IsEmpty() {
+				fmt.Fprintln(out, "Nothing to refund.")
+			} else {
+				fmt.Fprintf(out, "Returned %s.\n", describe(refund))
+			}
 		case "state":
-			printState(out, machine)
+			printProducts(out, machine)
+			fmt.Fprintf(out, "Float: %s (%s)\n", describe(machine.Float()), machine.Float().Total())
 		case "reload-product":
 			doReloadProduct(out, machine, arg)
 		case "reload-coins":
@@ -80,22 +81,19 @@ func doSelect(out io.Writer, m *vending.Machine, slot string) {
 		fmt.Fprintln(out, "Usage: select <slot>   e.g. select A1")
 		return
 	}
-	result, err := m.Select(strings.ToUpper(slot))
+	slot = strings.ToUpper(slot)
+	result, err := m.Select(slot)
 	if err != nil {
-		fmt.Fprintf(out, "Cannot select %s: %v\n", strings.ToUpper(slot), err)
+		fmt.Fprintf(out, "Cannot select %s: %v\n", slot, err)
 		return
 	}
 	report(out, result)
 }
 
 func doInsert(out io.Writer, m *vending.Machine, arg string) {
-	if arg == "" {
-		fmt.Fprintln(out, "Usage: insert <pence>   accepted: 1 2 5 10 20 50 100 200")
-		return
-	}
 	pence, err := strconv.Atoi(arg)
 	if err != nil {
-		fmt.Fprintf(out, "%q is not a number of pence.\n", arg)
+		fmt.Fprintln(out, "Usage: insert <pence>   accepted: 1 2 5 10 20 50 100 200")
 		return
 	}
 	coin, err := money.ParseDenomination(pence)
@@ -106,24 +104,10 @@ func doInsert(out io.Writer, m *vending.Machine, arg string) {
 
 	result, err := m.InsertCoin(coin)
 	if errors.Is(err, vending.ErrCannotMakeChange) {
-		refund := m.Cancel()
-		fmt.Fprintf(out, "Can't make the right change, sorry. Returning %s.\n", describe(refund))
-		return
-	}
-	if err != nil {
-		fmt.Fprintf(out, "%v\n", err)
+		fmt.Fprintf(out, "Can't make the right change, sorry. Returning %s.\n", describe(m.Cancel()))
 		return
 	}
 	report(out, result)
-}
-
-func doCancel(out io.Writer, m *vending.Machine) {
-	refund := m.Cancel()
-	if refund.IsEmpty() {
-		fmt.Fprintln(out, "Nothing to refund.")
-		return
-	}
-	fmt.Fprintf(out, "Returned %s.\n", describe(refund))
 }
 
 func doReloadProduct(out io.Writer, m *vending.Machine, arg string) {
@@ -149,19 +133,16 @@ func doReloadCoins(in *bufio.Scanner, out io.Writer, m *vending.Machine) {
 
 // report prints where a sale stands after a Select or InsertCoin.
 func report(out io.Writer, r vending.Result) {
-	if r.Dispensed {
-		if r.Change.IsEmpty() {
-			fmt.Fprintf(out, "Dispensed %s. No change.\n", r.Product.Name)
-		} else {
-			fmt.Fprintf(out, "Dispensed %s. Change: %s.\n", r.Product.Name, describe(r.Change))
-		}
-		return
-	}
-	if r.Outstanding > 0 {
+	switch {
+	case r.Dispensed && r.Change.IsEmpty():
+		fmt.Fprintf(out, "Dispensed %s. No change.\n", r.Product.Name)
+	case r.Dispensed:
+		fmt.Fprintf(out, "Dispensed %s. Change: %s.\n", r.Product.Name, describe(r.Change))
+	case r.Outstanding > 0:
 		fmt.Fprintf(out, "Balance %s. Please insert %s more.\n", r.Balance, r.Outstanding)
-		return
+	default:
+		fmt.Fprintf(out, "Balance %s. Select a product.\n", r.Balance)
 	}
-	fmt.Fprintf(out, "Balance %s. Select a product.\n", r.Balance)
 }
 
 // readCoinCounts asks for a quantity of each denomination and returns the coins.
@@ -177,28 +158,24 @@ func readCoinCounts(in *bufio.Scanner, out io.Writer) money.Coins {
 			if text == "" {
 				break
 			}
-			n, err := strconv.Atoi(text)
-			if err != nil || n < 0 {
-				fmt.Fprintln(out, "    please enter 0 or a positive whole number")
-				continue
+			if n, err := strconv.Atoi(text); err == nil && n >= 0 {
+				counts[d] = n
+				break
 			}
-			counts[d] = n
-			break
+			fmt.Fprintln(out, "    please enter 0 or a positive whole number")
 		}
 	}
 	return money.NewCoins(counts)
 }
 
 func printProducts(out io.Writer, m *vending.Machine) {
+	stock := m.Stock()
+	sort.Slice(stock, func(i, j int) bool { return stock[i].Product.Code < stock[j].Product.Code })
+
 	fmt.Fprintln(out, "Slot  Product           Price   Qty")
-	for _, s := range sortedStock(m) {
+	for _, s := range stock {
 		fmt.Fprintf(out, "%-5s %-17s %-7s %d\n", s.Product.Code, s.Product.Name, s.Product.Price, s.Quantity)
 	}
-}
-
-func printState(out io.Writer, m *vending.Machine) {
-	printProducts(out, m)
-	fmt.Fprintf(out, "Float: %s (%s)\n", describe(m.Float()), m.Float().Total())
 }
 
 func printHelp(out io.Writer) {

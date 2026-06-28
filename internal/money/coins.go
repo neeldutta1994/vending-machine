@@ -5,20 +5,18 @@ import (
 	"sort"
 )
 
-// Coins is a collection of coins counted by denomination. The same type is used
-// for the machine's change float, for the coins a customer has put in, and for
-// the change handed back.
+// Coins is a multiset of coins counted by denomination, used for the float, the
+// coins a customer inserts, and the change handed back.
 //
-// A Coins value behaves like a value object: the methods that change the
-// contents (Add, With, Remove) return a new Coins and leave the receiver
-// untouched. That makes it safe to hand a Coins around or hold onto a snapshot
-// without worrying that someone else will mutate it underneath you.
+// It behaves as a value object: Add, With and Remove return a new Coins rather
+// than mutating the receiver, so a Coins can be shared or held as a snapshot
+// without anyone changing it underneath you.
 type Coins struct {
 	counts map[Denomination]int
 }
 
-// NewCoins builds a Coins from a denomination->quantity map. Nil, zero and
-// negative quantities are ignored. The input map is copied, not retained.
+// NewCoins builds a Coins from a denomination->quantity map, ignoring nil, zero
+// and negative quantities. The input map is copied, not retained.
 func NewCoins(counts map[Denomination]int) Coins {
 	c := Coins{counts: map[Denomination]int{}}
 	for d, n := range counts {
@@ -29,10 +27,8 @@ func NewCoins(counts map[Denomination]int) Coins {
 	return c
 }
 
-// Count is how many of a given coin are held.
 func (c Coins) Count(d Denomination) int { return c.counts[d] }
 
-// Total adds up the face value of every coin held.
 func (c Coins) Total() Money {
 	var total Money
 	for d, n := range c.counts {
@@ -41,7 +37,6 @@ func (c Coins) Total() Money {
 	return total
 }
 
-// IsEmpty reports whether no coins are held.
 func (c Coins) IsEmpty() bool {
 	for _, n := range c.counts {
 		if n > 0 {
@@ -51,7 +46,7 @@ func (c Coins) IsEmpty() bool {
 	return true
 }
 
-// Add returns a new Coins holding this collection plus other.
+// Add returns this collection plus other.
 func (c Coins) Add(other Coins) Coins {
 	merged := c.clone()
 	for d, n := range other.counts {
@@ -60,23 +55,22 @@ func (c Coins) Add(other Coins) Coins {
 	return Coins{counts: merged}
 }
 
-// With returns a new Coins holding n more of the given coin.
+// With returns this collection plus n more of one coin.
 func (c Coins) With(d Denomination, n int) Coins {
 	merged := c.clone()
 	merged[d] += n
 	return Coins{counts: merged}
 }
 
-// Remove returns a new Coins with other taken away. It errors if this
-// collection does not hold enough of any coin to cover the subtraction.
+// Remove returns this collection minus other, erroring if it does not hold
+// enough of any coin.
 func (c Coins) Remove(other Coins) (Coins, error) {
 	merged := c.clone()
 	for d, n := range other.counts {
 		if merged[d] < n {
 			return Coins{}, fmt.Errorf("cannot remove %d x %s: only %d held", n, d, merged[d])
 		}
-		merged[d] -= n
-		if merged[d] == 0 {
+		if merged[d] -= n; merged[d] == 0 {
 			delete(merged, d)
 		}
 	}
@@ -89,8 +83,7 @@ type Holding struct {
 	Quantity     int
 }
 
-// Breakdown lists the coins held, largest denomination first. Handy for
-// printing and for asserting in tests.
+// Breakdown lists the coins held, largest denomination first.
 func (c Coins) Breakdown() []Holding {
 	out := make([]Holding, 0, len(c.counts))
 	for d, n := range c.counts {
