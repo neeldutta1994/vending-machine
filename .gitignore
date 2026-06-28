@@ -1,0 +1,12 @@
+# Binaries
+/vending-machine
+*.exe
+
+# Test / coverage output
+*.out
+coverage.*
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/

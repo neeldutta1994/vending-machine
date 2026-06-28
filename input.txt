@@ -1,0 +1,10 @@
+# Vending machine inventory.
+# One product per line: slot,product name,price (in pence),quantity
+# Blank lines and lines starting with # are ignored.
+A1,Water,80,10
+A2,Cola,120,8
+A3,Diet Cola,120,8
+B1,Crisps,95,6
+B2,Chocolate,110,5
+B3,Gum,45,12
+C1,Sparkling Water,90,7
